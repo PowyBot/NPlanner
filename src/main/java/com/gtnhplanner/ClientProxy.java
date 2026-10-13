@@ -55,6 +55,9 @@ public class ClientProxy extends CommonProxy {
                 .register(world);
         }
 
+        // The world's plans, kept by the server and shared by every player; the live status of placed machines.
+        com.gtnhplanner.client.sync.SharedSync.register();
+
         final WorldHandler handler = new WorldHandler();
         MinecraftForge.EVENT_BUS.register(handler);
         FMLCommonHandler.instance()

@@ -1194,6 +1194,22 @@ public final class BoardSession {
         PlanAPI.save();
     }
 
+    /**
+     * Whether the board can take a newer copy of a plan from the server now ({@code client/sync/SharedSync}): not while
+     * the plan open here is being edited (a wheel turning, a button held), so nothing in hand is pulled away.
+     */
+    public boolean canTakeServerCopy(final Graph old) {
+        return graph != old
+            || liveBefore == null && !org.lwjgl.input.Mouse.isButtonDown(0) && !org.lwjgl.input.Mouse.isButtonDown(1);
+    }
+
+    /** The plan open here was replaced in its slot by its newer copy from the server: the board shows that now. */
+    public void tookServerCopy(final Graph old, final Graph fresh) {
+        if (graph != old) return;
+        graph = fresh;
+        seenVersion = Long.MIN_VALUE;
+    }
+
     /** Opens the library in place of the board: set by the screen, used by the plan tabs' + menu. */
     private Runnable libraryOpener = () -> {};
 

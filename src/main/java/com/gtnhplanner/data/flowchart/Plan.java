@@ -107,6 +107,20 @@ public class Plan {
         return histories.of(graph);
     }
 
+    /**
+     * A plan's newer copy (from the server) takes its slot: the slot's tab, view and undo history stay, as after an
+     * undo. Returns the graph it replaced.
+     */
+    public Graph replaceSlot(final int index, final Graph fresh) {
+        final Graph old = graphs.get(index);
+        fresh.takeSlotOf(old);
+        fresh.setZoom(old.getZoom());
+        fresh.setPanX(old.getPanX());
+        fresh.setPanY(old.getPanY());
+        graphs.set(index, fresh);
+        return old;
+    }
+
     /** The slot holding the plan of this id, or -1. */
     public int indexOf(final java.util.UUID planId) {
         for (int i = 0; i < graphs.size(); i++) if (graphs.get(i)
