@@ -66,13 +66,17 @@ public final class PlanStore {
         plansDir = new File(root, "plans");
         trashDir = new File(root, "trash");
         final File[] files = plansDir.listFiles((d, n) -> n.endsWith(".plan"));
-        if (files != null) for (final File f : files) {
-            try {
-                final Stored s = read(Files.readAllBytes(f.toPath()));
-                plans.put(s.id(), s);
-            } catch (final IOException | RuntimeException e) {
-                GtnhPlanner.LOG.error("[server] could not read the plan {}; it is left where it is", f, e);
-            }
+        if (files == null) return;
+        for (final File f : files) load(f);
+    }
+
+    /** Reads one plan's file; a file that cannot be read is left where it is. */
+    private void load(final File f) {
+        try {
+            final Stored s = read(Files.readAllBytes(f.toPath()));
+            plans.put(s.id(), s);
+        } catch (final IOException | RuntimeException e) {
+            GtnhPlanner.LOG.error("[server] could not read the plan {}; it is left where it is", f, e);
         }
     }
 

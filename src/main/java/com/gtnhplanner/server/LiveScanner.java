@@ -125,22 +125,38 @@ public final class LiveScanner<W> {
     /** One server tick: looks at up to {@link #BUDGET} machines that are due, then sends what changed. */
     public void tick() {
         tick++;
-        int budget = BUDGET;
-        // Round the plans, a share of the budget each, so one huge plan does not starve the rest.
+        probeDue();
+        scans.forEach(this::sendChanged);
+    }
+
+    /** Rounds the plans, a share of the budget each, so one huge plan does not starve the rest. */
+    private void probeDue() {
         final List<Scan> list = new ArrayList<>(scans.values());
-        for (int round = 0; round < 4 && budget > 0; round++) for (final Scan scan : list) {
-            if (budget <= 0) break;
-            final int share = Math.max(1, budget / Math.max(1, list.size()));
-            budget -= step(scan, share);
+        if (list.isEmpty()) return;
+        int budget = BUDGET;
+        for (int round = 0; round < 4 && budget > 0; round++) budget = probeRound(list, budget);
+    }
+
+    /** One round over the plans; the budget left. */
+    private int probeRound(final List<Scan> list, int budget) {
+        for (final Scan scan : list) {
+            if (budget <= 0) return 0;
+            budget -= step(scan, Math.max(1, budget / list.size()));
         }
-        for (final Map.Entry<UUID, Scan> e : scans.entrySet()) {
-            final Scan scan = e.getValue();
-            if (scan.changed.isEmpty()) continue;
-            final Proto.Status status = new Proto.Status(e.getKey(), false, List.copyOf(scan.changed));
-            scan.changed.clear();
-            for (final Map.Entry<W, UUID> w : watching.entrySet()) if (w.getValue()
-                .equals(e.getKey())) sender.send(w.getKey(), status);
-        }
+        return budget;
+    }
+
+    /** What changed in one plan since the last tick, to everyone watching it. */
+    private void sendChanged(final UUID planId, final Scan scan) {
+        if (scan.changed.isEmpty()) return;
+        final Proto.Status status = new Proto.Status(planId, false, List.copyOf(scan.changed));
+        scan.changed.clear();
+        watching.entrySet()
+            .stream()
+            .filter(
+                w -> w.getValue()
+                    .equals(planId))
+            .forEach(w -> sender.send(w.getKey(), status));
     }
 
     /** Looks at up to {@code max} due machines of one plan; how many it looked at. */
@@ -150,20 +166,28 @@ public final class LiveScanner<W> {
         for (int seen = 0; seen < n && looked < max; seen++) {
             final Proto.Placement p = scan.placements.get(scan.cursor);
             scan.cursor = (scan.cursor + 1) % n;
-            final String key = p.key();
-            final Long due = scan.due.get(key);
-            if (due != null && due > tick) continue;
-            scan.due.put(key, tick + PERIOD);
-            looked++;
-            MachineStatus status;
-            try {
-                status = prober.probe(p.dim(), p.x(), p.y(), p.z());
-            } catch (final RuntimeException e) {
-                status = MachineStatus.unloaded();
-            }
-            if (!status.equals(scan.last.put(key, status)))
-                scan.changed.add(new Proto.Live(p.nodeId(), p.index(), status));
+            if (probeIfDue(scan, p)) looked++;
         }
         return looked;
+    }
+
+    /** Looks at one machine if its period is up, noting it when it changed; whether it was looked at. */
+    private boolean probeIfDue(final Scan scan, final Proto.Placement p) {
+        final String key = p.key();
+        final Long due = scan.due.get(key);
+        if (due != null && due > tick) return false;
+        scan.due.put(key, tick + PERIOD);
+        final MachineStatus status = probe(p);
+        if (status.equals(scan.last.put(key, status))) return true;
+        scan.changed.add(new Proto.Live(p.nodeId(), p.index(), status));
+        return true;
+    }
+
+    private MachineStatus probe(final Proto.Placement p) {
+        try {
+            return prober.probe(p.dim(), p.x(), p.y(), p.z());
+        } catch (final RuntimeException e) {
+            return MachineStatus.unloaded();
+        }
     }
 }

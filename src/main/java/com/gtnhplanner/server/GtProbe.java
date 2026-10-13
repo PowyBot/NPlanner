@@ -37,22 +37,41 @@ final class GtProbe {
         if (!(tile instanceof IGregTechTileEntity base)) return null;
         final IMetaTileEntity meta = base.getMetaTileEntity();
         if (meta == null) return MachineStatus.block("GregTech block");
-        int metaId = -1;
-        String name = "";
-        boolean multiblock = false, formed = true, active = false, allowed = true, critical = false;
-        int progress = 0, maxProgress = 0, maintenance = 0, efficiency = 0;
-        long eu = 0;
-        String outputs = "", message = "";
-        try {
-            metaId = base.getMetaTileID();
-            name = meta.getLocalName();
-            active = base.isActive();
-            allowed = base.isAllowedToWork();
-        } catch (final Throwable t) {
-            warn(t);
+        return new Reading(base, meta).identity()
+            .multiblock()
+            .basicMachine()
+            .recipeCheck()
+            .shutDown()
+            .build();
+    }
+
+    /** One machine read fact by fact, each step guarded on its own and returning the reading. */
+    private static final class Reading {
+
+        private final IGregTechTileEntity base;
+        private final IMetaTileEntity meta;
+        private int metaId = -1, progress, maxProgress, maintenance, efficiency;
+        private String name = "", outputs = "", message = "";
+        private boolean multiblock, formed = true, active, allowed = true, critical;
+        private long eu;
+
+        Reading(final IGregTechTileEntity base, final IMetaTileEntity meta) {
+            this.base = base;
+            this.meta = meta;
         }
-        try {
-            if (meta instanceof MTEMultiBlockBase m) {
+
+        Reading identity() {
+            return guarded(() -> {
+                metaId = base.getMetaTileID();
+                name = meta.getLocalName();
+                active = base.isActive();
+                allowed = base.isAllowedToWork();
+            });
+        }
+
+        Reading multiblock() {
+            if (!(meta instanceof MTEMultiBlockBase m)) return this;
+            return guarded(() -> {
                 multiblock = true;
                 formed = m.mMachine;
                 progress = m.mProgresstime;
@@ -62,71 +81,93 @@ final class GtProbe {
                 efficiency = m.mEfficiency;
                 maintenance = Math.max(0, m.getIdealStatus() - m.getRepairStatus());
                 outputs = names(m.mOutputItems, m.mOutputFluids);
-            } else if (meta instanceof MTEBasicMachine b) {
+            });
+        }
+
+        Reading basicMachine() {
+            if (!(meta instanceof MTEBasicMachine b)) return this;
+            return guarded(() -> {
                 progress = b.mProgresstime;
                 maxProgress = b.mMaxProgresstime;
                 eu = b.mEUt;
                 outputs = names(b.mOutputItems, b.mOutputFluid == null ? null : new FluidStack[] { b.mOutputFluid });
                 if (b.mStuttering) message = "Not enough power";
-            }
-        } catch (final Throwable t) {
-            warn(t);
+            });
         }
-        try {
-            if (meta instanceof MTEMultiBlockBase m && !active) {
+
+        Reading recipeCheck() {
+            if (active || !(meta instanceof MTEMultiBlockBase m)) return this;
+            return guarded(() -> {
                 final CheckRecipeResult check = m.getCheckRecipeResult();
-                if (check != null && !check.wasSuccessful()) message = check.getDisplayString();
-            }
-        } catch (final Throwable t) {
-            warn(t);
+                if (check == null || check.wasSuccessful()) return;
+                message = check.getDisplayString();
+            });
         }
-        try {
-            if (!active && base.wasShutdown()) {
+
+        Reading shutDown() {
+            if (active) return this;
+            return guarded(() -> {
+                if (!base.wasShutdown()) return;
                 final ShutDownReason reason = base.getLastShutDownReason();
-                if (reason != null) {
-                    critical = reason.wasCritical();
-                    final String why = reason.getDisplayString();
-                    if (why != null && !why.isEmpty()) message = why;
-                }
+                if (reason == null) return;
+                critical = reason.wasCritical();
+                final String why = reason.getDisplayString();
+                if (why != null && !why.isEmpty()) message = why;
+            });
+        }
+
+        MachineStatus build() {
+            // An idle machine's last recipe is not what it runs.
+            if (!active) {
+                progress = 0;
+                maxProgress = 0;
+                eu = 0;
+                outputs = "";
             }
-        } catch (final Throwable t) {
-            warn(t);
+            return new MachineStatus(
+                MachineStatus.MACHINE,
+                metaId,
+                name == null ? "" : name,
+                multiblock,
+                formed,
+                active,
+                allowed,
+                progress,
+                maxProgress,
+                eu,
+                maintenance,
+                efficiency,
+                outputs,
+                clean(message),
+                critical);
         }
-        if (!active) {
-            progress = 0;
-            maxProgress = 0;
-            eu = 0;
-            outputs = "";
+
+        private Reading guarded(final Runnable read) {
+            try {
+                read.run();
+            } catch (final Throwable t) {
+                warn(t);
+            }
+            return this;
         }
-        return new MachineStatus(
-            MachineStatus.MACHINE,
-            metaId,
-            name == null ? "" : name,
-            multiblock,
-            formed,
-            active,
-            allowed,
-            progress,
-            maxProgress,
-            eu,
-            maintenance,
-            efficiency,
-            outputs,
-            clean(message),
-            critical);
     }
 
     /** What a recipe makes, by name: the first three, then how many more. */
     private static String names(@Nullable final ItemStack[] items, @Nullable final FluidStack[] fluids) {
         final List<String> out = new ArrayList<>();
-        if (items != null) for (final ItemStack s : items) if (s != null && s.getItem() != null) try {
-            out.add(s.getDisplayName());
-        } catch (final RuntimeException ignored) {}
-        if (fluids != null) for (final FluidStack f : fluids) if (f != null && f.getFluid() != null) try {
-            out.add(f.getLocalizedName());
-        } catch (final RuntimeException ignored) {}
+        if (items != null)
+            for (final ItemStack s : items) addName(out, s == null || s.getItem() == null ? null : s::getDisplayName);
+        if (fluids != null) for (final FluidStack f : fluids)
+            addName(out, f == null || f.getFluid() == null ? null : f::getLocalizedName);
         if (out.size() <= 3) return String.join(", ", out);
         return String.join(", ", out.subList(0, 3)) + " +" + (out.size() - 3);
+    }
+
+    private static void addName(final List<String> out, @Nullable final java.util.function.Supplier<String> name) {
+        if (name == null) return;
+        try {
+            out.add(name.get());
+        } catch (final RuntimeException ignored) {}
     }
 
     /** A machine's message without its colour codes and line breaks. */

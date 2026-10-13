@@ -98,44 +98,56 @@ public final class LiveBadge {
         pill(text, h.level(), cardW - width(text) * scale, -15 * scale, scale);
     }
 
+    /** A panel's lines, each with its colour; {@link #add} adds one only when its condition holds. */
+    private static final class Lines {
+
+        final List<String> text = new ArrayList<>();
+        final List<Integer> colour = new ArrayList<>();
+
+        Lines add(final boolean when, final java.util.function.Supplier<String> line, final int argb) {
+            if (!when) return this;
+            text.add(line.get());
+            colour.add(argb);
+            return this;
+        }
+    }
+
+    /** What the panel says of a machine under its name and pill. */
+    private static Lines details(final MachineStatus s, final MachineStatus.Health h) {
+        final Lines lines = new Lines();
+        if (s.found() != MachineStatus.MACHINE) return lines;
+        final String message = s.message();
+        return lines
+            .add(
+                s.maxProgress() > 0,
+                () -> String.format("%.1f s / %.1f s", s.progress() / 20.0, s.maxProgress() / 20.0),
+                0xFFE5E7EB)
+            .add(
+                s.euPerTick() != 0,
+                () -> (s.euPerTick() > 0 ? "Using " : "Making ") + eu(Math.abs(s.euPerTick())),
+                0xFFE5E7EB)
+            .add(
+                !s.outputs()
+                    .isEmpty(),
+                () -> "→ " + s.outputs(),
+                0xFFBFDBFE)
+            .add(s.multiblock() && s.formed(), () -> "Efficiency " + s.efficiency() / 100 + "%", 0xFF9CA3AF)
+            .add(
+                s.maintenance() > 0,
+                () -> "Maintenance: " + s.maintenance() + (s.maintenance() == 1 ? " issue" : " issues"),
+                WARN)
+            .add(!message.isEmpty() && !message.equals(h.text()), () -> message, s.critical() ? BAD : WARN);
+    }
+
     /**
      * The world: everything read of the machine looked at, in a panel with its top left at {@code x, y}: its name,
      * its state, its recipe's progress, power, what it makes, efficiency, maintenance and why it stopped.
      */
     static void panel(final MachineStatus s, final MachineStatus.Health h, final float x, final float y,
         final float scale) {
-        final List<String> lines = new ArrayList<>();
-        final List<Integer> colours = new ArrayList<>();
-        if (s.found() == MachineStatus.MACHINE) {
-            if (s.maxProgress() > 0) {
-                lines.add(String.format("%.1f s / %.1f s", s.progress() / 20.0, s.maxProgress() / 20.0));
-                colours.add(0xFFE5E7EB);
-            }
-            if (s.euPerTick() != 0) {
-                lines.add((s.euPerTick() > 0 ? "Using " : "Making ") + eu(Math.abs(s.euPerTick())));
-                colours.add(0xFFE5E7EB);
-            }
-            if (!s.outputs()
-                .isEmpty()) {
-                lines.add("→ " + s.outputs());
-                colours.add(0xFFBFDBFE);
-            }
-            if (s.multiblock() && s.formed()) {
-                lines.add("Efficiency " + s.efficiency() / 100 + "%");
-                colours.add(0xFF9CA3AF);
-            }
-            if (s.maintenance() > 0) {
-                lines.add("Maintenance: " + s.maintenance() + (s.maintenance() == 1 ? " issue" : " issues"));
-                colours.add(WARN);
-            }
-            if (!s.message()
-                .isEmpty()
-                && !s.message()
-                    .equals(h.text())) {
-                lines.add(s.message());
-                colours.add(s.critical() ? BAD : WARN);
-            }
-        }
+        final Lines details = details(s, h);
+        final List<String> lines = details.text;
+        final List<Integer> colours = details.colour;
         final String title = s.name()
             .isEmpty() ? "Nothing built here" : s.name();
         float w = Math.max(Hyb.width(title), width(h.text()));

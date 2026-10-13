@@ -1,7 +1,6 @@
 package com.gtnhplanner.server;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -132,78 +131,79 @@ public final class ServerPlanner {
         final PlanStore plans = store;
         if (plans == null) return;
         if (msg instanceof Proto.Hello hello) {
-            final boolean accepted = hello.protocol() == Proto.PROTOCOL;
-            PlannerNetwork
-                .sendTo(player, new Proto.Welcome(Proto.PROTOCOL, accepted, Tags.VERSION, plans.index()));
-            if (accepted) ready.add(player);
-            else ready.remove(player);
-            GtnhPlanner.LOG.info(
-                "[server] {}'s planner {} (protocol {}, {})",
-                player.getCommandSenderName(),
-                accepted ? "joined" : "is too old or too new",
-                hello.protocol(),
-                hello.modVersion());
+            hello(player, hello, plans);
             return;
         }
         // Nothing but hello until hello is answered.
         if (!ready.contains(player)) return;
         switch (msg) {
-            case Proto.Push push -> {
-                final PlanStore.Result r = plans.push(push, player.getCommandSenderName(), System.currentTimeMillis());
-                if (r.plan() == null) {
-                    GtnhPlanner.LOG.warn(
-                        "[server] refused {}'s plan '{}': {}",
-                        player.getCommandSenderName(),
-                        push.name(),
-                        r.refused());
-                    return;
-                }
-                PlannerNetwork.sendTo(
-                    player,
-                    new Proto.Pushed(
-                        push.planId(),
-                        r.plan()
-                            .revision(),
-                        r.conflictCopy() == null ? null
-                            : r.conflictCopy()
-                                .id()));
-                broadcast(new Proto.PlanData(r.plan().entry(), r.plan().blob()), player);
-                if (r.conflictCopy() != null) broadcast(
-                    new Proto.PlanData(
-                        r.conflictCopy()
-                            .entry(),
-                        r.conflictCopy()
-                            .blob()),
-                    null);
-                if (live != null) live.placementsChanged(push.planId());
-            }
-            case Proto.Delete delete -> {
-                if (!plans.delete(delete.planId())) return;
-                GtnhPlanner.LOG.info("[server] {} deleted the plan {}", player.getCommandSenderName(), delete.planId());
-                broadcast(new Proto.Removed(delete.planId()), player);
-                if (live != null) live.planRemoved(delete.planId());
-            }
-            case Proto.Fetch fetch -> {
-                final PlanStore.Stored s = plans.get(fetch.planId());
-                if (s == null) PlannerNetwork.sendTo(player, new Proto.Removed(fetch.planId()));
-                else PlannerNetwork.sendTo(player, new Proto.PlanData(s.entry(), s.blob()));
-            }
-            case Proto.Watch watch -> {
-                if (live != null) live.watch(player, watch.planId() != null && plans.get(watch.planId()) != null
-                    ? watch.planId()
-                    : null);
-            }
+            case Proto.Push push -> push(player, push, plans);
+            case Proto.Delete delete -> delete(player, delete, plans);
+            case Proto.Fetch fetch -> fetch(player, fetch, plans);
+            case Proto.Watch watch -> watch(player, watch, plans);
             default -> {}
         }
     }
 
+    private void hello(final EntityPlayerMP player, final Proto.Hello hello, final PlanStore plans) {
+        final boolean accepted = hello.protocol() == Proto.PROTOCOL;
+        PlannerNetwork.sendTo(player, new Proto.Welcome(Proto.PROTOCOL, accepted, Tags.VERSION, plans.index()));
+        if (accepted) ready.add(player);
+        else ready.remove(player);
+        GtnhPlanner.LOG.info(
+            "[server] {}'s planner {} (protocol {}, {})",
+            player.getCommandSenderName(),
+            accepted ? "joined" : "is too old or too new",
+            hello.protocol(),
+            hello.modVersion());
+    }
+
+    private void push(final EntityPlayerMP player, final Proto.Push push, final PlanStore plans) {
+        final PlanStore.Result r = plans.push(push, player.getCommandSenderName(), System.currentTimeMillis());
+        final PlanStore.Stored plan = r.plan();
+        if (plan == null) {
+            GtnhPlanner.LOG
+                .warn("[server] refused {}'s plan '{}': {}", player.getCommandSenderName(), push.name(), r.refused());
+            return;
+        }
+        final PlanStore.Stored copy = r.conflictCopy();
+        PlannerNetwork
+            .sendTo(player, new Proto.Pushed(push.planId(), plan.revision(), copy == null ? null : copy.id()));
+        broadcast(dataOf(plan), player);
+        if (copy != null) broadcast(dataOf(copy), null);
+        if (live != null) live.placementsChanged(push.planId());
+    }
+
+    private void delete(final EntityPlayerMP player, final Proto.Delete delete, final PlanStore plans) {
+        if (!plans.delete(delete.planId())) return;
+        GtnhPlanner.LOG.info("[server] {} deleted the plan {}", player.getCommandSenderName(), delete.planId());
+        broadcast(new Proto.Removed(delete.planId()), player);
+        if (live != null) live.planRemoved(delete.planId());
+    }
+
+    private static void fetch(final EntityPlayerMP player, final Proto.Fetch fetch, final PlanStore plans) {
+        final PlanStore.Stored s = plans.get(fetch.planId());
+        PlannerNetwork.sendTo(player, s == null ? new Proto.Removed(fetch.planId()) : dataOf(s));
+    }
+
+    private void watch(final EntityPlayerMP player, final Proto.Watch watch, final PlanStore plans) {
+        if (live == null) return;
+        final boolean known = watch.planId() != null && plans.get(watch.planId()) != null;
+        live.watch(player, known ? watch.planId() : null);
+    }
+
+    private static Proto.PlanData dataOf(final PlanStore.Stored s) {
+        return new Proto.PlanData(s.entry(), s.blob());
+    }
+
     /** A message to every ready player but {@code except}, encoded once. */
     private void broadcast(final Proto.Msg msg, @Nullable final EntityPlayerMP except) {
-        final List<EntityPlayerMP> to = new ArrayList<>();
-        for (final EntityPlayerMP p : ready) if (p != except) to.add(p);
+        final List<EntityPlayerMP> to = ready.stream()
+            .filter(p -> p != except)
+            .toList();
         if (to.isEmpty()) return;
         final byte[] encoded = Proto.encode(msg);
-        for (final EntityPlayerMP p : to) PlannerNetwork.sendTo(p, encoded);
+        to.forEach(p -> PlannerNetwork.sendTo(p, encoded));
     }
 
     /** For the debug command: who watches what. */

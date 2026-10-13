@@ -47,16 +47,8 @@ public final class Chunker {
         public byte[] accept(final Part part) {
             if (part.total() <= 0 || part.index() < 0 || part.index() >= part.total()) return null;
             if (part.total() == 1) return part.bytes();
-            List<byte[]> got = pending.get(part.transfer());
-            if (part.index() == 0) {
-                if (got != null) drop(part.transfer());
-                got = new ArrayList<>(part.total());
-                pending.put(part.transfer(), got);
-            } else if (got == null || got.size() != part.index()) {
-                // A part out of order: the message is lost.
-                if (got != null) drop(part.transfer());
-                return null;
-            }
+            final List<byte[]> got = partsFor(part);
+            if (got == null) return null;
             got.add(part.bytes());
             pendingBytes += part.bytes().length;
             if (pendingBytes > MAX_PENDING) {
@@ -66,12 +58,34 @@ public final class Chunker {
             }
             if (got.size() < part.total()) return null;
             pending.remove(part.transfer());
-            int size = 0;
-            for (final byte[] b : got) size += b.length;
-            pendingBytes -= size;
-            final byte[] whole = new byte[size];
+            final byte[] whole = join(got);
+            pendingBytes -= whole.length;
+            return whole;
+        }
+
+        /**
+         * The parts so far of the message this part belongs to; null when it comes out of order (the message is lost).
+         */
+        @Nullable
+        private List<byte[]> partsFor(final Part part) {
+            final List<byte[]> got = pending.get(part.transfer());
+            if (part.index() == 0) {
+                drop(part.transfer());
+                final List<byte[]> fresh = new ArrayList<>(part.total());
+                pending.put(part.transfer(), fresh);
+                return fresh;
+            }
+            if (got != null && got.size() == part.index()) return got;
+            drop(part.transfer());
+            return null;
+        }
+
+        private static byte[] join(final List<byte[]> parts) {
+            final byte[] whole = new byte[parts.stream()
+                .mapToInt(b -> b.length)
+                .sum()];
             int at = 0;
-            for (final byte[] b : got) {
+            for (final byte[] b : parts) {
                 System.arraycopy(b, 0, whole, at, b.length);
                 at += b.length;
             }

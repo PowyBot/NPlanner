@@ -167,49 +167,55 @@ public final class SharedSync {
 
     private void handle(final Proto.Msg msg) {
         switch (msg) {
-            case Proto.Welcome w -> {
-                if (!w.accepted() || w.protocol() != Proto.PROTOCOL) {
-                    state = State.REFUSED;
-                    say(
-                        EnumChatFormatting.RED + "This server's GTNH Planner (" + w.modVersion()
-                            + ") cannot share plans with yours ("
-                            + Tags.VERSION
-                            + "): update both to the same release.");
-                    return;
-                }
-                state = State.READY;
-                server.clear();
-                for (final Proto.Entry e : w.plans()) server.put(e.planId(), e.revision());
-                reconciled = false;
-                watchSent = false;
-                GtnhPlanner.LOG.info("[sync] the server keeps {} plans", server.size());
-            }
-            case Proto.PlanData d -> {
-                server.put(
-                    d.entry()
-                        .planId(),
-                    d.entry()
-                        .revision());
-                removedWaiting.remove(
-                    d.entry()
-                        .planId());
-                if (ready() == null) waiting.put(
-                    d.entry()
-                        .planId(),
-                    d);
-                else take(d);
-            }
+            case Proto.Welcome w -> welcome(w);
+            case Proto.PlanData d -> planData(d);
             case Proto.Pushed p -> pushed(p);
-            case Proto.Removed r -> {
-                server.remove(r.planId());
-                known.remove(r.planId());
-                waiting.remove(r.planId());
-                if (ready() == null) removedWaiting.add(r.planId());
-                else drop(r.planId());
-            }
+            case Proto.Removed r -> removed(r);
             case Proto.Status s -> LiveStatus.apply(s);
             default -> {}
         }
+    }
+
+    private void welcome(final Proto.Welcome w) {
+        if (!w.accepted() || w.protocol() != Proto.PROTOCOL) {
+            state = State.REFUSED;
+            say(
+                EnumChatFormatting.RED + "This server's GTNH Planner ("
+                    + w.modVersion()
+                    + ") cannot share plans with yours ("
+                    + Tags.VERSION
+                    + "): update both to the same release.");
+            return;
+        }
+        state = State.READY;
+        server.clear();
+        w.plans()
+            .forEach(e -> server.put(e.planId(), e.revision()));
+        reconciled = false;
+        watchSent = false;
+        GtnhPlanner.LOG.info("[sync] the server keeps {} plans", server.size());
+    }
+
+    private void planData(final Proto.PlanData d) {
+        final Proto.Entry e = d.entry();
+        server.put(e.planId(), e.revision());
+        removedWaiting.remove(e.planId());
+        if (ready() == null) {
+            waiting.put(e.planId(), d);
+            return;
+        }
+        take(d);
+    }
+
+    private void removed(final Proto.Removed r) {
+        server.remove(r.planId());
+        known.remove(r.planId());
+        waiting.remove(r.planId());
+        if (ready() == null) {
+            removedWaiting.add(r.planId());
+            return;
+        }
+        drop(r.planId());
     }
 
     /** The plans, if they are loaded and the player's own (not the tour's); else null. */
@@ -248,36 +254,45 @@ public final class SharedSync {
     private void take(final Proto.PlanData d) {
         final Plan all = ready();
         if (all == null) return;
-        final UUID id = d.entry()
-            .planId();
-        known.add(id);
-        final int i = all.indexOf(id);
-        final Graph old = i < 0 ? null
-            : all.getGraphs()
-                .get(i);
-        if (old != null && (old.getRevision() >= d.entry()
-            .revision() || old.unsynced())) return;
+        final Proto.Entry e = d.entry();
+        known.add(e.planId());
+        final int i = all.indexOf(e.planId());
+        if (i < 0) {
+            settle(addNew(all, d), e);
+            return;
+        }
+        final Graph old = all.getGraphs()
+            .get(i);
+        if (old.getRevision() >= e.revision() || old.unsynced()) return;
         final BoardSession board = BoardSession.current();
-        if (old != null && board != null && !board.canTakeServerCopy(old)) {
+        if (board != null && !board.canTakeServerCopy(old)) {
             // Being edited this moment: try again in a moment.
-            waiting.put(id, d);
+            waiting.put(e.planId(), d);
             return;
         }
         final Graph fresh = decode(d);
-        fresh.setPlanId(id);
-        if (old == null) {
-            fresh.setOpen(false);
-            all.getGraphs()
-                .add(fresh);
-        } else {
-            all.replaceSlot(i, fresh);
-            if (board != null) board.tookServerCopy(old, fresh);
-        }
-        fresh.setRevision(
+        all.replaceSlot(i, fresh);
+        if (board != null) board.tookServerCopy(old, fresh);
+        settle(fresh, e);
+    }
+
+    /** A plan new to this client: a slot of its own, without a tab. */
+    private static Graph addNew(final Plan all, final Proto.PlanData d) {
+        final Graph fresh = decode(d);
+        fresh.setPlanId(
             d.entry()
-                .revision());
-        fresh.markSynced();
-        rememberSeen(fresh);
+                .planId());
+        fresh.setOpen(false);
+        all.getGraphs()
+            .add(fresh);
+        return fresh;
+    }
+
+    /** A plan just taken from the server is in step with it, at its revision. */
+    private void settle(final Graph g, final Proto.Entry e) {
+        g.setRevision(e.revision());
+        g.markSynced();
+        rememberSeen(g);
         PlanAPI.save();
     }
 
@@ -329,41 +344,64 @@ public final class SharedSync {
     private void step() {
         final Plan all = ready();
         if (all == null) return;
-        if (all != plans) {
-            plans = all;
-            reconciled = false;
-            known.clear();
-            inFlight.clear();
-            seen.clear();
-        }
+        if (all != plans) startOver(all);
         if (!reconciled) {
             reconcile(all);
             reconciled = true;
         }
-        if (!waiting.isEmpty()) {
-            final List<Proto.PlanData> later = new ArrayList<>(waiting.values());
-            waiting.clear();
-            for (final Proto.PlanData d : later) take(d);
-        }
-        for (final UUID id : new ArrayList<>(removedWaiting)) drop(id);
+        takeWaiting();
+        pushSettled(all);
+        sendDeletes(all);
+        watch();
+    }
+
+    /** Other plans than those this was in step with (a reload, the tour ending): in step with these from scratch. */
+    private void startOver(final Plan all) {
+        plans = all;
+        reconciled = false;
+        known.clear();
+        inFlight.clear();
+        seen.clear();
+    }
+
+    /** What came in while the plans were not loaded, or while the plan was being edited. */
+    private void takeWaiting() {
+        final List<Proto.PlanData> later = new ArrayList<>(waiting.values());
+        waiting.clear();
+        later.forEach(this::take);
+        final List<UUID> gone = new ArrayList<>(removedWaiting);
         removedWaiting.clear();
+        gone.forEach(this::drop);
+    }
+
+    /**
+     * Each plan with edits the server has not seen, once it has been still a moment and nothing of it is on its way.
+     */
+    private void pushSettled(final Plan all) {
         final long now = System.currentTimeMillis();
-        final Set<UUID> here = new HashSet<>();
         for (final Graph g : new ArrayList<>(all.getGraphs())) {
-            here.add(g.getPlanId());
             if (!g.unsynced()) continue;
             final InFlight f = inFlight.get(g.getPlanId());
             if (f != null && now - f.at() < ANSWER_MS) continue;
-            if (now - rememberSeen(g) >= SETTLE_MS) push(g);
+            if (now - rememberSeen(g) < SETTLE_MS) continue;
+            push(g);
         }
-        // A plan the server has, gone from here: deleted here.
-        for (final UUID id : new ArrayList<>(known)) if (!here.contains(id)) {
+    }
+
+    /** A plan the server has, gone from here: deleted here, so deleted for everyone. */
+    private void sendDeletes(final Plan all) {
+        final Set<UUID> here = new HashSet<>();
+        all.getGraphs()
+            .forEach(g -> here.add(g.getPlanId()));
+        final List<UUID> gone = known.stream()
+            .filter(id -> !here.contains(id))
+            .toList();
+        for (final UUID id : gone) {
             known.remove(id);
             server.remove(id);
             seen.remove(id);
             PlannerNetwork.sendToServer(new Proto.Delete(id));
         }
-        watch();
     }
 
     private void reconcile(final Plan all) {
