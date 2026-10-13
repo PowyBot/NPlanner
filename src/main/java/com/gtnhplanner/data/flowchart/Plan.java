@@ -107,6 +107,14 @@ public class Plan {
         return histories.of(graph);
     }
 
+    /** The slot holding the plan of this id, or -1. */
+    public int indexOf(final java.util.UUID planId) {
+        for (int i = 0; i < graphs.size(); i++) if (graphs.get(i)
+            .getPlanId()
+            .equals(planId)) return i;
+        return -1;
+    }
+
     public static Plan getInstance() {
         if (INSTANCE == null) {
             INSTANCE = loadPlan();
@@ -144,6 +152,9 @@ public class Plan {
             read.setName(g.getName());
             read.setOpen(g.isOpen());
             read.setLastOpen(g.getLastOpen());
+            read.setPlanId(g.getPlanId());
+            read.setRevision(g.getRevision());
+            if (!g.unsynced()) read.markSynced();
             graphs.set(index, read);
             com.gtnhplanner.GtnhPlanner.LOG.info("Slot '{}' read on a second try", g.getName());
         } catch (final RuntimeException e) {

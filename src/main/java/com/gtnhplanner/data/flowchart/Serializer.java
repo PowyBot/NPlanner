@@ -133,17 +133,36 @@ public final class Serializer {
             if (!graph.getDescription()
                 .isEmpty()) slotObj.addProperty("description", graph.getDescription());
             if (graph.getIcon() != null) slotObj.addProperty("icon", graph.getIcon());
-            // A slot that could not be read is written back as it was, unless it has been used since.
-            final boolean keep = graph.getUnreadable() != null && graph.nodes.isEmpty()
-                && graph.getDrawers()
-                    .isEmpty();
-            if (keep) slotObj.addProperty("data", graph.getUnreadable());
-            else if (debug) slotObj.add("data", graphToJson(graph));
-            else slotObj.addProperty("data", encodeKept(graph));
+            slotObj.addProperty(
+                "id",
+                graph.getPlanId()
+                    .toString());
+            if (graph.getRevision() > 0) {
+                slotObj.addProperty("revision", graph.getRevision());
+                if (graph.unsynced()) slotObj.addProperty("unsynced", true);
+            }
+            if (debug && !kept(graph)) slotObj.add("data", graphToJson(graph));
+            else slotObj.addProperty("data", slotData(graph));
             arr.add(slotObj);
         }
         root.add("graphs", arr);
         return root;
+    }
+
+    /** Whether the slot is one that could not be read, kept as it was: unless it has been used since. */
+    private static boolean kept(final Graph graph) {
+        return graph.getUnreadable() != null && graph.nodes.isEmpty()
+            && graph.getDrawers()
+                .isEmpty();
+    }
+
+    /**
+     * The slot's plan code as it is saved: its {@link #encode}, made again only when it changed, or, for a slot that
+     * could not be read, its data as it was. What the save writes, and what the server is sent.
+     */
+    @Nonnull
+    public static String slotData(final Graph graph) {
+        return kept(graph) ? graph.getUnreadable() : encodeKept(graph);
     }
 
     /** A graph's last encoding, and the version, name and camera it was made at. */
@@ -216,6 +235,23 @@ public final class Serializer {
                 if (obj.has("icon")) graph.setIcon(
                     obj.get("icon")
                         .getAsString());
+                // A slot saved before plans had ids keeps the one it was just given; two slots never share one.
+                if (obj.has("id")) try {
+                    final java.util.UUID id = java.util.UUID.fromString(
+                        obj.get("id")
+                            .getAsString());
+                    if (plan.indexOf(id) < 0) graph.setPlanId(id);
+                } catch (final IllegalArgumentException ignored) {}
+                if (obj.has("revision") && graph.getPlanId()
+                    .toString()
+                    .equals(
+                        obj.get("id")
+                            .getAsString())) {
+                    graph.setRevision(
+                        obj.get("revision")
+                            .getAsLong());
+                    if (!obj.has("unsynced")) graph.markSynced();
+                }
                 // What was read is the graph's encoding until it changes: the first save after loading encodes only
                 // what has been edited since, not every plan.
                 if (graph.getUnreadable() == null) KEPT.put(

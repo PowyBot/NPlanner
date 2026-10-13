@@ -134,6 +134,44 @@ public class Graph {
     private transient UUID slot = UUID.randomUUID();
 
     /**
+     * The plan's own id: the same on every client and on the server that keeps it ({@code server/PlanStore}), so a plan
+     * is found by it, never by its slot or name. Saved with the slot (never in a plan code: a pasted plan is a new
+     * one);
+     * a slot saved before plans had ids gets one when it is read. An undo keeps it ({@link #takeSlotOf}).
+     */
+    @Getter
+    @Setter
+    private transient UUID planId = UUID.randomUUID();
+
+    /**
+     * The server's revision of this plan that its contents are based on ({@code client/sync/SharedSync}); 0 while the
+     * server has never had it. Saved with the slot.
+     */
+    @Getter
+    @Setter
+    private transient long revision;
+
+    /**
+     * The {@link #version()} and name the plan had when it last matched the server's copy; anything else means edits
+     * the server has not seen. {@code Long.MIN_VALUE} for never.
+     */
+    private transient long syncedVersion = Long.MIN_VALUE;
+
+    @Nullable
+    private transient String syncedName;
+
+    /** Records that the plan, as it is now, is what the server has. */
+    public void markSynced() {
+        syncedVersion = version;
+        syncedName = name;
+    }
+
+    /** Whether the plan has edits the server has not seen (or the server has never had it). */
+    public boolean unsynced() {
+        return revision == 0 || syncedVersion != version || !name.equals(syncedName);
+    }
+
+    /**
      * The display view, built on first ask after a solve rather than with it: the canvas wants the
      * boundary every frame and never the choices, which the summary reads straight from the solve.
      */
@@ -212,6 +250,10 @@ public class Graph {
         this.postId = replaced.postId;
         this.description = replaced.description;
         this.icon = replaced.icon;
+        this.planId = replaced.planId;
+        this.revision = replaced.revision;
+        this.syncedVersion = replaced.syncedVersion;
+        this.syncedName = replaced.syncedName;
     }
 
     private void bumpVersion() {
