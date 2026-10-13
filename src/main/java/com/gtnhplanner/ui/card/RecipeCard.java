@@ -386,11 +386,13 @@ public final class RecipeCard extends ParentWidget<RecipeCard> implements Intera
         if (!com.gtnhplanner.dev.DevPerf.on()) {
             drawCard(context, widgetTheme);
             drawLinkMode();
+            drawLive();
             return;
         }
         final long started = System.nanoTime();
         drawCard(context, widgetTheme);
         drawLinkMode();
+        drawLive();
         com.gtnhplanner.dev.DevPerf.time("cards", System.nanoTime() - started);
     }
 
@@ -406,6 +408,18 @@ public final class RecipeCard extends ParentWidget<RecipeCard> implements Intera
         else if (com.gtnhplanner.ui.world.LinkTarget.fits(session.graph(), node))
             Hyb.ring(-4, -4, CardLayout.W + 8, h + 8, 3, Hyb.mix(Hyb.SELECTION, 0xFFFFFF, 0.3f + 0.7f * breathe()));
         else Hyb.rect(0, 0, CardLayout.W, h, 0xC0101114);
+    }
+
+    /**
+     * How its machines placed in the world are doing, as the server reads them: a pill over its top right corner, kept
+     * readable zoomed out.
+     */
+    private void drawLive() {
+        if (model == null) return;
+        final float zoom = session.graph()
+            .getZoom();
+        com.gtnhplanner.ui.world.LiveBadge
+            .onCard(session.graph(), model.node, model.machineStack, CardLayout.W, Math.max(1, 0.7f / zoom));
     }
 
     /** A click on the card while linking a machine from the world: this card is the pick. */
