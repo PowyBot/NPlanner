@@ -448,7 +448,15 @@ public final class SharedSync {
         }
         if (blob.length > Proto.MAX_BLOB) return;
         inFlight.put(g.getPlanId(), new InFlight(g.version(), g.getName(), System.currentTimeMillis()));
-        PlannerNetwork.sendToServer(new Proto.Push(g.getPlanId(), g.getRevision(), g.getName(), blob, placements(g)));
+        PlannerNetwork.sendToServer(
+            new Proto.Push(
+                g.getPlanId(),
+                g.getRevision(),
+                g.getName(),
+                blob,
+                g.getNodes()
+                    .size(),
+                placements(g)));
     }
 
     /** Where a plan's machines are placed, in the clear, for the server to look at. */

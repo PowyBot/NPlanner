@@ -62,7 +62,7 @@ class ServerCoreTest {
         final Proto.Entry entry = new Proto.Entry(PLAN, 4, "Steel line", 123L, "Alex");
         final List<Proto.Msg> all = List.of(
             new Proto.Hello(Proto.PROTOCOL, "0.2.0-alpha.9"),
-            new Proto.Push(PLAN, 3, "Steel line", blob, placements),
+            new Proto.Push(PLAN, 3, "Steel line", blob, 2, placements),
             new Proto.Delete(PLAN),
             new Proto.Fetch(PLAN),
             new Proto.Watch(PLAN),
@@ -92,7 +92,7 @@ class ServerCoreTest {
     @Test
     void malformedBytesAreRefused() {
         assertThrows(IOException.class, () -> Proto.decode(new byte[] { 99 }));
-        final byte[] push = Proto.encode(new Proto.Push(PLAN, 0, "x", new byte[10], List.of()));
+        final byte[] push = Proto.encode(new Proto.Push(PLAN, 0, "x", new byte[10], 0, List.of()));
         assertThrows(IOException.class, () -> Proto.decode(java.util.Arrays.copyOf(push, push.length - 3)));
     }
 
@@ -139,6 +139,7 @@ class ServerCoreTest {
                 0,
                 "Steel line",
                 new byte[] { 1, 2, 3 },
+                1,
                 List.of(new Proto.Placement(NODE, 0, 0, 1, 2, 3))),
             "Alex",
             1000);
@@ -163,8 +164,8 @@ class ServerCoreTest {
     @Test
     void anEditOnTheLatestRevisionMovesItOn(@TempDir final File dir) {
         final PlanStore store = new PlanStore(dir);
-        store.push(new Proto.Push(PLAN, 0, "a", new byte[] { 1 }, List.of()), "Alex", 1);
-        final PlanStore.Result r = store.push(new Proto.Push(PLAN, 1, "a", new byte[] { 2 }, List.of()), "Sam", 2);
+        store.push(new Proto.Push(PLAN, 0, "a", new byte[] { 1 }, 0, List.of()), "Alex", 1);
+        final PlanStore.Result r = store.push(new Proto.Push(PLAN, 1, "a", new byte[] { 2 }, 0, List.of()), "Sam", 2);
         assertNull(r.conflictCopy());
         assertEquals(
             2,
@@ -175,7 +176,8 @@ class ServerCoreTest {
             store.all()
                 .size());
         // The same plan again changes nothing.
-        final PlanStore.Result same = store.push(new Proto.Push(PLAN, 1, "a", new byte[] { 2 }, List.of()), "Sam", 3);
+        final PlanStore.Result same = store
+            .push(new Proto.Push(PLAN, 1, "a", new byte[] { 2 }, 0, List.of()), "Sam", 3);
         assertEquals(
             2,
             same.plan()
@@ -187,10 +189,11 @@ class ServerCoreTest {
     @Test
     void aStaleEditStillWinsButTheOverwrittenPlanIsKeptAsACopy(@TempDir final File dir) {
         final PlanStore store = new PlanStore(dir);
-        store.push(new Proto.Push(PLAN, 0, "Line", new byte[] { 1 }, List.of()), "Alex", 1);
-        store.push(new Proto.Push(PLAN, 1, "Line", new byte[] { 2 }, List.of()), "Alex", 2);
+        store.push(new Proto.Push(PLAN, 0, "Line", new byte[] { 1 }, 0, List.of()), "Alex", 1);
+        store.push(new Proto.Push(PLAN, 1, "Line", new byte[] { 2 }, 0, List.of()), "Alex", 2);
         // Sam edited revision 1 meanwhile.
-        final PlanStore.Result r = store.push(new Proto.Push(PLAN, 1, "Line", new byte[] { 3 }, List.of()), "Sam", 3);
+        final PlanStore.Result r = store
+            .push(new Proto.Push(PLAN, 1, "Line", new byte[] { 3 }, 0, List.of()), "Sam", 3);
         assertNotNull(r.conflictCopy());
         assertEquals(
             3,
@@ -216,7 +219,7 @@ class ServerCoreTest {
     @Test
     void aDeletedPlanGoesToTheTrash(@TempDir final File dir) {
         final PlanStore store = new PlanStore(dir);
-        store.push(new Proto.Push(PLAN, 0, "a", new byte[] { 1 }, List.of()), "Alex", 1);
+        store.push(new Proto.Push(PLAN, 0, "a", new byte[] { 1 }, 0, List.of()), "Alex", 1);
         assertTrue(store.delete(PLAN));
         assertFalse(store.delete(PLAN));
         store.close();
@@ -230,7 +233,7 @@ class ServerCoreTest {
     void tooBigAPlanIsRefusedAndABrokenFileSkipped(@TempDir final File dir) throws IOException {
         final PlanStore store = new PlanStore(dir);
         assertNotNull(
-            store.push(new Proto.Push(PLAN, 0, "a", new byte[Proto.MAX_BLOB + 1], List.of()), "Alex", 1)
+            store.push(new Proto.Push(PLAN, 0, "a", new byte[Proto.MAX_BLOB + 1], 0, List.of()), "Alex", 1)
                 .refused());
         store.close();
         new File(dir, "plans").mkdirs();

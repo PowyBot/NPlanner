@@ -17,6 +17,9 @@ import com.gtnhplanner.GtnhPlanner;
 import com.gtnhplanner.Tags;
 import com.gtnhplanner.net.PlannerNetwork;
 import com.gtnhplanner.net.Proto;
+import com.gtnhplanner.quest.PlannerQuests;
+import com.gtnhplanner.quest.QuestChecks;
+import com.gtnhplanner.quest.QuestTask;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
@@ -40,8 +43,12 @@ public final class ServerPlanner {
     /** The players whose planner said hello in a protocol this server speaks. */
     private final Set<EntityPlayerMP> ready = new LinkedHashSet<>();
 
+    /** How often the quests that look at the live status are checked, in ticks. */
+    private static final int QUEST_PERIOD = 100;
+
     @Nullable
     private PlanStore store;
+    private long ticks;
     @Nullable
     private LiveScanner<EntityPlayerMP> live;
 
@@ -113,6 +120,7 @@ public final class ServerPlanner {
     @SubscribeEvent
     public void onTick(final TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.START || store == null) return;
+        final PlanStore plans = store;
         for (Incoming in; (in = inbox.poll()) != null;) {
             try {
                 handle(in.player(), in.msg());
@@ -128,6 +136,24 @@ public final class ServerPlanner {
             }
         }
         if (live != null) live.tick();
+        PlannerQuests.backend()
+            .tick();
+        if (++ticks % QUEST_PERIOD == 0) checkInOrder(plans);
+    }
+
+    /** "Tutto in regola": who sees every machine of their plan running. */
+    private void checkInOrder(final PlanStore plans) {
+        if (live == null || !PlannerQuests.on()) return;
+        final LiveScanner<EntityPlayerMP> scanner = live;
+        final List<java.util.UUID> done = scanner.watching()
+            .entrySet()
+            .stream()
+            .filter(w -> QuestChecks.allInOrder(placementsOf(plans, w.getValue()), scanner.seenBy(w.getKey())))
+            .map(
+                w -> w.getKey()
+                    .getUniqueID())
+            .toList();
+        if (!done.isEmpty()) PlannerQuests.complete(QuestTask.ALL_IN_ORDER, done);
     }
 
     @SubscribeEvent
@@ -183,6 +209,8 @@ public final class ServerPlanner {
         broadcast(dataOf(plan), player);
         if (copy != null) broadcast(dataOf(copy), null);
         if (live != null) live.placementsChanged(push.planId());
+        if (QuestChecks.planOnPaper(push.cards()))
+            PlannerQuests.complete(QuestTask.PLAN_ON_PAPER, List.of(player.getUniqueID()));
     }
 
     private void delete(final EntityPlayerMP player, final Proto.Delete delete, final PlanStore plans) {

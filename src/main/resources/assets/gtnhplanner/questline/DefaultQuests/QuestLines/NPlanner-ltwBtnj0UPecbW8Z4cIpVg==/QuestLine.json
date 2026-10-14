@@ -1,0 +1,19 @@
+{
+  "properties:10": {
+    "betterquesting:10": {
+      "bg_image:8": "",
+      "bg_size:3": 256,
+      "desc:8": "Plan a factory, build it, and keep an eye on it.",
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "minecraft:map"
+      },
+      "name:8": "NPlanner",
+      "visibility:8": "UNLOCKED"
+    }
+  },
+  "questLineIDHigh:4": -7576178589919063817,
+  "questLineIDLow:4": -7174956474378868394
+}

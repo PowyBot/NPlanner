@@ -44,10 +44,11 @@ public final class Proto {
     public record Hello(int protocol, String modVersion) implements Msg {}
 
     /**
-     * A plan, new or edited: what it is based on ({@code baseRevision}, 0 for new), its name, its blob, and where its
-     * machines are placed in the world, in the clear, so the server can look at them ({@link Placement}).
+     * A plan, new or edited: what it is based on ({@code baseRevision}, 0 for new), its name, its blob, how many cards
+     * it has, and where its machines are placed in the world, in the clear, so the server can look at them
+     * ({@link Placement}) and knows the plan's size without reading it (the quests, {@code quest/QuestChecks}).
      */
-    public record Push(UUID planId, long baseRevision, String name, byte[] blob, List<Placement> placements)
+    public record Push(UUID planId, long baseRevision, String name, byte[] blob, int cards, List<Placement> placements)
         implements Msg {}
 
     /** The client deleted a plan. */
@@ -125,6 +126,7 @@ public final class Proto {
                     out.writeLong(m.baseRevision());
                     out.writeUTF(cap(m.name()));
                     blob(out, m.blob());
+                    out.writeInt(m.cards());
                     out.writeInt(
                         m.placements()
                             .size());
@@ -209,11 +211,12 @@ public final class Proto {
                 final long base = in.readLong();
                 final String name = in.readUTF();
                 final byte[] blob = blob(in);
+                final int cards = count(in, 1_000_000);
                 final int n = count(in, 1_000_000);
                 final List<Placement> placements = new ArrayList<>(n);
                 for (int i = 0; i < n; i++) placements
                     .add(new Placement(uuid(in), in.readInt(), in.readInt(), in.readInt(), in.readInt(), in.readInt()));
-                yield new Push(id, base, name, blob, placements);
+                yield new Push(id, base, name, blob, cards, placements);
             }
             case DELETE -> new Delete(uuid(in));
             case FETCH -> new Fetch(uuid(in));

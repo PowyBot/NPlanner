@@ -4,13 +4,16 @@ import com.gtnhplanner.annotation.VersionedInjector;
 import com.gtnhplanner.client.ImportCommand;
 import com.gtnhplanner.config.ConfigMain;
 import com.gtnhplanner.net.PlannerNetwork;
+import com.gtnhplanner.quest.PlannerQuests;
 import com.gtnhplanner.server.PlannerCommand;
 import com.gtnhplanner.server.ServerPlanner;
 
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
+import cpw.mods.fml.common.event.FMLServerStartedEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
+import cpw.mods.fml.common.event.FMLServerStoppedEvent;
 import cpw.mods.fml.common.event.FMLServerStoppingEvent;
 
 public class CommonProxy {
@@ -26,7 +29,9 @@ public class CommonProxy {
         ServerPlanner.init();
     }
 
-    public void init(final FMLInitializationEvent event) {}
+    public void init(final FMLInitializationEvent event) {
+        PlannerQuests.init();
+    }
 
     public void postInit(final FMLPostInitializationEvent event) {
 
@@ -41,7 +46,18 @@ public class CommonProxy {
         }
     }
 
+    /** The world's quests are loaded by now: the questline goes into the book. */
+    public void serverStarted(final FMLServerStartedEvent event) {
+        PlannerQuests.backend()
+            .serverStarted();
+    }
+
     public void serverStopping(final FMLServerStoppingEvent event) {
         ServerPlanner.INSTANCE.stop();
+    }
+
+    public void serverStopped(final FMLServerStoppedEvent event) {
+        PlannerQuests.backend()
+            .serverStopped();
     }
 }
