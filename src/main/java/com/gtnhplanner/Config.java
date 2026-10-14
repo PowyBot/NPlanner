@@ -66,6 +66,15 @@ public final class Config {
      */
     public static int solverEffortPercent = 100;
 
+    /**
+     * The server's progression (NPlanner-notes/PROGRESSION.md): {@code full} reads each player only the machines within
+     * {@link #sightRadius} of them (or on their network), {@code off} reads them every machine wherever it is.
+     */
+    public static boolean progression = true;
+
+    /** How far a player reads placed machines live, in blocks: a sphere, in their dimension, through walls. */
+    public static int sightRadius = 64;
+
     public static final int SOLVER_EFFORT_MIN = 25;
     public static final int SOLVER_EFFORT_MAX = 200;
 
@@ -115,6 +124,24 @@ public final class Config {
             "How long AUTO balancing may spend looking for a better answer, as a percentage of the"
                 + " default. Lower gives up sooner on big charts; higher makes them balance better"
                 + " and the GUI pause longer, because the solve runs while the screen draws.");
+
+        progression = !"off".equals(
+            configuration.getString(
+                "progression",
+                "server",
+                "full",
+                "full: players read placed machines live only within sightRadius of them. off: every machine, wherever"
+                    + " it is.",
+                new String[] { "full", "off" }));
+
+        sightRadius = configuration.getInt(
+            "sightRadius",
+            "server",
+            64,
+            1,
+            1024,
+            "How far a player reads placed machines live, in blocks: a sphere around them, in their dimension,"
+                + " through walls. Further out a machine shows what was last seen of it, greyed.");
 
         if (configuration.hasChanged()) {
             configuration.save();

@@ -335,23 +335,26 @@ public final class PlanOverlay {
         lap("ar.ghosts");
     }
 
-    /** What the server last read of the machine at a placement ({@code client/sync/LiveStatus}), or null. */
+    /** What the player has seen of the machine at a placement ({@code client/sync/LiveStatus}), or null. */
     @Nullable
-    private static com.gtnhplanner.live.MachineStatus status(final Placed p) {
+    private static com.gtnhplanner.live.Seen seen(final Placed p) {
         final PlanSnapshot snap = PlanSnapshot.latest();
         if (snap == null || p.preview || p.nth <= 0) return null;
-        return com.gtnhplanner.client.sync.LiveStatus.of(
+        return com.gtnhplanner.client.sync.LiveStatus.seen(
             snap.graph()
                 .getPlanId(),
             p.card.id(),
             p.nth - 1);
     }
 
-    /** The badge for a placement, or null when nothing is known of it. */
+    /** The badge for a placement, grey out of sight, or null when nothing is known of it. */
     @Nullable
     private static com.gtnhplanner.live.MachineStatus.Health health(final Placed p) {
-        final com.gtnhplanner.live.MachineStatus s = status(p);
-        return s == null ? null : s.health(com.gtnhplanner.client.sync.LiveStatus.expectedMetaId(p.card.machine()));
+        final com.gtnhplanner.live.Seen s = seen(p);
+        return s == null ? null
+            : s.health(
+                com.gtnhplanner.client.sync.LiveStatus.expectedMetaId(p.card.machine()),
+                System.currentTimeMillis());
     }
 
     /**
@@ -360,20 +363,20 @@ public final class PlanOverlay {
      */
     private void live(final List<Placed> all, final ScaledResolution sr) {
         for (final Placed p : all) {
-            final com.gtnhplanner.live.MachineStatus s = status(p);
-            if (s == null) continue;
-            final com.gtnhplanner.live.MachineStatus.Health h = s
-                .health(com.gtnhplanner.client.sync.LiveStatus.expectedMetaId(p.card.machine()));
-            if (h.level() == com.gtnhplanner.live.MachineStatus.Level.UNKNOWN) continue;
+            final com.gtnhplanner.live.MachineStatus.Health h = health(p);
+            if (h == null || h.level() == com.gtnhplanner.live.MachineStatus.Level.UNKNOWN) continue;
+            final com.gtnhplanner.live.Seen seen = seen(p);
+            final com.gtnhplanner.live.MachineStatus s = seen == null ? null : seen.current(System.currentTimeMillis());
             final float[] r = onScreen(p.rect, sr);
             if (r == null) continue;
             final boolean looked = lookedAt != null && lookedAt.card.id()
                 .equals(p.card.id()) && lookedAt.x == p.x && lookedAt.y == p.y && lookedAt.z == p.z;
             final float scale = looked || p.distance < 16 ? 1 : 0.75f;
-            final String words = LiveBadge.words(s, h);
+            final boolean away = h.level() == com.gtnhplanner.live.MachineStatus.Level.AWAY;
+            final String words = away || s == null ? h.text() : LiveBadge.words(s, h);
             final float cx = (r[0] + r[2]) / 2, top = Math.max(2, r[1] - 14 * scale);
             LiveBadge.pill(words, h.level(), cx - LiveBadge.width(words) * scale / 2, top, scale);
-            if (looked) {
+            if (looked && s != null) {
                 final float x = Math.min(r[2] + 6, sr.getScaledWidth() - 170);
                 LiveBadge.panel(s, h, Math.max(2, x), Math.max(2, Math.min(r[1], sr.getScaledHeight() - 110)), 1);
             }

@@ -27,7 +27,7 @@ import com.gtnhplanner.live.MachineStatus;
 public final class Proto {
 
     /** The protocol both sides speak. Raise it whenever a message changes. */
-    public static final int PROTOCOL = 1;
+    public static final int PROTOCOL = 2;
 
     /** The largest plan the server takes (its compressed blob). */
     public static final int MAX_BLOB = 4 * 1024 * 1024;
@@ -78,7 +78,10 @@ public final class Proto {
     /** A plan was deleted. */
     public record Removed(UUID planId) implements Msg {}
 
-    /** The live status of placed machines of a watched plan: only those that changed, unless {@code full}. */
+    /**
+     * The live status of placed machines of a watched plan the player sees: only those that changed, came into or went
+     * out of their sight, unless {@code full}.
+     */
     public record Status(UUID planId, boolean full, List<Live> machines) implements Msg {}
 
     // endregion
@@ -99,8 +102,8 @@ public final class Proto {
         }
     }
 
-    /** One placed machine's status. */
-    public record Live(UUID nodeId, int index, MachineStatus status) {}
+    /** One placed machine's status; null when it is out of the player's sight ({@code server/Sight}). */
+    public record Live(UUID nodeId, int index, @Nullable MachineStatus status) {}
 
     // region Bytes
 
@@ -183,7 +186,8 @@ public final class Proto {
                     for (final Live l : m.machines()) {
                         uuid(out, l.nodeId());
                         out.writeInt(l.index());
-                        l.status()
+                        out.writeBoolean(l.status() != null);
+                        if (l.status() != null) l.status()
                             .write(out);
                     }
                 }
@@ -231,7 +235,8 @@ public final class Proto {
                 final boolean full = in.readBoolean();
                 final int n = count(in, 1_000_000);
                 final List<Live> machines = new ArrayList<>(n);
-                for (int i = 0; i < n; i++) machines.add(new Live(uuid(in), in.readInt(), MachineStatus.read(in)));
+                for (int i = 0; i < n; i++)
+                    machines.add(new Live(uuid(in), in.readInt(), in.readBoolean() ? MachineStatus.read(in) : null));
                 yield new Status(id, full, machines);
             }
             default -> throw new IOException("Unknown planner message " + type);

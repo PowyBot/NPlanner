@@ -33,7 +33,7 @@ public final class LiveBadge {
             case GOOD -> GOOD;
             case WARN -> WARN;
             case BAD -> BAD;
-            case UNKNOWN -> UNKNOWN;
+            case UNKNOWN, AWAY -> UNKNOWN;
         };
     }
 
@@ -91,7 +91,7 @@ public final class LiveBadge {
         final MachineStatus.Health h = LiveStatus.card(plan, node.id, node.worldLinks, expected);
         if (h == null) return;
         String text = h.text();
-        if (node.worldLinks.size() == 1) {
+        if (node.worldLinks.size() == 1 && h.level() != Level.AWAY) {
             final MachineStatus s = LiveStatus.of(plan, node.id, 0);
             if (s != null) text = words(s, h);
         }

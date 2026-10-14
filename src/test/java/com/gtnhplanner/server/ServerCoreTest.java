@@ -260,7 +260,9 @@ class ServerCoreTest {
         },
             (w, s) -> heard.computeIfAbsent(w, k -> new ArrayList<>())
                 .add(s),
-            id -> id.equals(PLAN) ? placed : List.of());
+            id -> id.equals(PLAN) ? placed : List.of(),
+            w -> null,
+            Sight.UNLIMITED);
         live.watch("alex", PLAN);
         assertTrue(
             heard.get("alex")
@@ -314,7 +316,9 @@ class ServerCoreTest {
         final LiveScanner<String> live = new LiveScanner<>(
             (dim, x, y, z) -> running(1),
             (w, s) -> heard.add(s),
-            id -> List.copyOf(placed));
+            id -> List.copyOf(placed),
+            w -> null,
+            Sight.UNLIMITED);
         live.watch("alex", PLAN);
         live.tick();
         placed.remove(1);

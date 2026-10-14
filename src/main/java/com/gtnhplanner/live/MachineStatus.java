@@ -52,7 +52,9 @@ public record MachineStatus(byte found, int metaId, String name, boolean multibl
         /** Not built, not formed, the wrong machine, or shut down by a fault. */
         BAD,
         /** Unknown: its chunk is not loaded, or the server has not looked yet. */
-        UNKNOWN
+        UNKNOWN,
+        /** Out of the player's sight ({@link Seen}): grey, with the age of what they last saw. */
+        AWAY
     }
 
     /** A badge: its level and its few words. */

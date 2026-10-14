@@ -52,9 +52,11 @@ public final class PlannerCommand extends CommandBase {
                         + " watches "
                         + (s == null ? e.getValue()
                             : s.name() + " ("
+                                + planner.seen(e.getKey())
+                                + " of "
                                 + s.placements()
                                     .size()
-                                + " placed)"));
+                                + " placed in sight)"));
             }
             return;
         }

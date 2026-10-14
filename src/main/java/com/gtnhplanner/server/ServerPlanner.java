@@ -12,6 +12,7 @@ import javax.annotation.Nullable;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 
+import com.gtnhplanner.Config;
 import com.gtnhplanner.GtnhPlanner;
 import com.gtnhplanner.Tags;
 import com.gtnhplanner.net.PlannerNetwork;
@@ -63,17 +64,27 @@ public final class ServerPlanner {
             GtnhPlanner.MODID);
         store = new PlanStore(root);
         final PlanStore plans = store;
-        live = new LiveScanner<>(MachineProbe::probe, PlannerNetwork::sendTo, id -> {
-            final PlanStore.Stored s = plans.get(id);
-            return s == null ? List.of() : s.placements();
-        });
+        final Sight sight = Config.progression ? new Sight(true, Config.sightRadius, NetworkReach.detect())
+            : Sight.UNLIMITED;
+        live = new LiveScanner<>(
+            MachineProbe::probe,
+            PlannerNetwork::sendTo,
+            id -> placementsOf(plans, id),
+            p -> new Sight.Viewer(p.getUniqueID(), p.dimension, p.posX, p.posY, p.posZ),
+            sight);
         inbox.clear();
         ready.clear();
         GtnhPlanner.LOG.info(
-            "[server] {} plans kept in {}",
+            "[server] {} plans kept in {}; machines read {}",
             store.all()
                 .size(),
-            root);
+            root,
+            sight.limited() ? "within " + sight.radius() + " blocks" : "wherever they are");
+    }
+
+    private static List<Proto.Placement> placementsOf(final PlanStore plans, final java.util.UUID id) {
+        final PlanStore.Stored s = plans.get(id);
+        return s == null ? List.of() : s.placements();
     }
 
     /** The world is going: every plan is written. */
@@ -204,6 +215,11 @@ public final class ServerPlanner {
         if (to.isEmpty()) return;
         final byte[] encoded = Proto.encode(msg);
         to.forEach(p -> PlannerNetwork.sendTo(p, encoded));
+    }
+
+    /** For the debug command: how many machines of their plan a player sees. */
+    public int seen(final EntityPlayerMP player) {
+        return live == null ? 0 : live.seen(player);
     }
 
     /** For the debug command: who watches what. */
