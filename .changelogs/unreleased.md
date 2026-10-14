@@ -1,7 +1,8 @@
 ## New
 
 - **Plans live on the server** – install the planner on the server too (it's needed on both sides now). Every plan in the world is shared with everyone on it: your edits show up for the others a moment later and theirs for you. If two people change the same plan at once, nothing is lost: the other version is kept as a "conflict copy".
-- **Live machines** – machines you placed from a plan show how they're really doing: a green, yellow or red badge on the card and over the machine in the world (running and how far along, idle, switched off, needs maintenance, not built, wrong machine, structure incomplete). Look at one to see everything: progress, power, what it's making and why it stopped.
+- **Live machines** – machines you placed from a plan show how they're really doing: a green, yellow or red badge on the card and over the machine in the world (running and how far along, idle, switched off, needs maintenance, not built, wrong machine, structure incomplete). Look at one to see everything: progress, power, what it's making and why it stopped. You see machines live within 64 blocks of you; further away they go grey and say how long ago you last saw them.
+- **Quests** – got BetterQuesting? There's an NPlanner tab in the quest book with a couple of quests to get you planning.
 - **Fluid Tank** – a new card under Non-recipe → Other. Wire a cell or a fluid to it and it empties or fills cells for free, no Canner needed.
 - **Split your leftovers** – when your machines make more than the plan uses (or not enough), the overview shows where the extra goes. Hit Split to share it out, or Auto to let the planner pick.
 - **Surplus and Imported rows** – a card now shows what leaves or comes into the plan at a wired port with no drawer. Drag that row off to turn it into a drawer.

@@ -259,9 +259,21 @@ solved in the background (`data/flowchart/balancer/`, `SolveService`), auto-layo
   "conflict copy"; deletes go to `trash/`). `client/sync/SharedSync` says hello on joining, reconciles
   (`Reconcile`), pushes a plan once it has been still 1.5 s and takes others' edits into its slot (`Plan.replaceSlot`,
   `BoardSession.tookServerCopy`); for now every player sees every plan. Live status: the client watches the plan last
-  open (`PlanSnapshot`); `server/LiveScanner` reads each of its placed machines every 2 s (loaded chunks, 64 a tick),
-  `server/GtProbe` reading GregTech defensively, and sends what changed; `ui/world/LiveBadge` draws the pill on cards
-  and ghosts, the coloured outline and the panel for the machine looked at. `/plannerserver plans|live` on the server.
+  open (`PlanSnapshot`); `server/LiveScanner` reads each of its placed machines a player sees every 2 s (loaded chunks,
+  64 a tick), `server/GtProbe` reading GregTech defensively, and sends each player what changed among those. "A vista
+  d'occhio" (the progression, NPlanner-notes/PROGRESSION.md): a player sees a machine when its controller is within
+  `sightRadius` (config, 64) of them, a sphere in their dimension through walls (`server/Sight`), or on their network
+  (`server/NetworkReach`: the hook for BeCom's data nodes, none until BeCom has its API); `progression = off` sees
+  everything. A machine leaving sight is sent with no status: the client keeps what was seen, grey with its age, too old
+  after 60 s (`live/Seen`, `MachineStatus.Level.AWAY`). `ui/world/LiveBadge` draws the pill on cards and ghosts, the
+  coloured outline and the panel for the machine looked at. `/plannerserver plans|live` on the server.
+- Quests (`quest/`): with BetterQuesting (compileOnly, reached only from `quest/bq/`, loaded by name) an "NPlanner"
+  tab, added exactly as BeCom adds its own: the files in `assets/gtnhplanner/questline/` (GTNH's DefaultQuests layout,
+  fixed UUIDs) are written by `tools/quests/make_quests.py` with the lang text; `quest/bq/BqBackend` puts what is
+  missing into the book at server start and every `questlineRecheckSeconds`, keeping the quests' progress across a
+  DefaultQuests reload; the task type `gtnhplanner:event` (`QuestTask`) is completed by the planner
+  (`PlannerQuests.complete`), its conditions in `QuestChecks`. `questlineEnabled = false` leaves the book alone. A quest
+  whose task nothing reports yet has `waits` in the generator and is not written; drop it and run the generator again.
 
 ## Build and test
 
